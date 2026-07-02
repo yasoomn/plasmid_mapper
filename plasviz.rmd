@@ -1,0 +1,86 @@
+---
+title: "Theming with bslib and thematic"
+output: 
+  html_document:
+    code_folding: show
+    theme:
+      bg: "#202123"
+      fg: "#B8BCC2"
+      primary: "#EA80FC"
+      secondary: "#00DAC6"
+      base_font:
+        google: Prompt
+      heading_font:
+        google: Proza Libre
+---
+
+```{r setup, include=FALSE}
+if (requireNamespace("thematic")) 
+  thematic::thematic_rmd(font = "auto")
+
+library(plasmapR)
+library(genbankr)
+library(gggenes)
+library(ggplot2)
+library(dplyr)
+library(stringr)
+```
+
+
+# Upload a genbank file
+
+```{r}
+readGenBank("pICH47751.gb")
+
+```
+
+
+
+
+# Plot the genome using plasmapR
+
+Need to remove all weird features that Geneious adds to the genbank file. 
+
+
+```{r}
+fl <- system.file("extdata", "petm20.gb", package = "plasmapR")
+plasmid <-  read_gb(file = "/home/yasoo/plasmid_view/pYM060.gb")
+plasmid <-  read_gb(file = "/home/yasoo/plasmid_view/pYM_23_014 PcamV.gb")
+
+#remove all features that have NA in the start_end property.
+
+for (i in rev(seq_along(plasmid$features))) {
+  if (is.na(sum(plasmid$features[[i]]$start_end))) {
+    plasmid$features[[i]] <- NULL
+  } else {
+    plasmid$features[[i]]$index <- i
+  }
+}
+
+
+
+plot_plasmid(plasmid, name = "pYM030")
+
+
+
+as.data.frame(plasmid)[!str_detect(as.data.frame(plasmid)$name, "Geneious"), ] |>
+  plot_plasmid(name = "pYM030" ) + 
+  ggplot2::coord_cartesian() + 
+  ggplot2::scale_y_continuous(limits = NULL) + 
+  scale_fill_brewer(palette = "Set3")
+```
+
+
+```{r}
+
+as.data.frame(plasmid) |> 
+  mutate(molecule = "pYM030") |>
+  filter(type != "misc_feature") |>
+  ggplot(aes(xmin = start, xmax = end, y = molecule, fill = type, forward = direction)) +
+
+  geom_gene_arrow(position = position_dodge(width = 0.1, preserve = "total", reverse = F), arrowhead_height = grid::unit(3, "mm")) + 
+  facet_wrap(~ molecule, scales = "free", ncol = 1) + 
+  scale_fill_brewer(palette = "Set3") + 
+  theme_genes()
+match()
+```
