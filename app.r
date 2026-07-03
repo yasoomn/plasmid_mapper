@@ -19,7 +19,6 @@ remove_junk_features <- function(df) {
   
   df <- df |> filter(!note %in% junk_features.name, !type %in% junk_features.type)
 
-
   return(df)
 }
 
@@ -67,32 +66,53 @@ Geneious_palette = c("CDS" = "#FFFF00",
   "intron" = "#F5F5F5", 
   "regulatory" = "#0EA089")
 
+my_theme <- bs_theme(
+  version = 5,
+  bootswatch = "flatly",
+  primary = "#279b3e"
+)
+
 # Define UI for app that draws a histogram ----
 ui <- page_sidebar(
-  # App title ----
-  title = "Plasmid Viewer",
-    theme = bs_theme(
-    bootswatch = "cosmo",
-    base_font = font_google("Inter")
-  ),
   
+  title = "Plasmid Viewer",
+  theme = my_theme,
+  tags$head(
+  tags$style(HTML("
+    table.dataTable tbody tr.selected td,
+    table.dataTable tbody td.selected {
+      box-shadow: inset 0 0 0 9999px #7b8a8b40 !important;
+      border-left: 3px solid #89ab94 !important;
+      color: #000 !important;
+    }
+    :root {
+      --dt-row-selected: transparent !important;
+    }
+    table.dataTable tbody tr:hover, table.dataTable tbody tr:hover td {
+      background-color: rgba(255, 192, 203, 0.15) !important;
+    }
+  "))
+),
   # Sidebar panel for inputs ----
   sidebar = sidebar(
     # Input: Slider for the number of bins ----
     fileInput("genbank", "Choose a Genbank File"),
-    checkboxInput("remove_junk", "Remove Junk Features", value = TRUE), 
+    #checkboxInput("remove_junk", "Remove Junk Features", value = TRUE), 
     #checkboxInput("invert_seq", "Invert sequence", value = FALSE), 
     checkboxInput("circular", "Circular view", value = FALSE), 
-    checkboxInput("standardize_ori_position", "Shift ORI to position 1", value = FALSE)
+    checkboxInput("standardize_ori_position", "ORI at the start", value = TRUE),
+    # TODO add input for font size and wrap threshold
+    # TODO add input for color palette
+    downloadButton("downloadMap", "Download Map")
   ),
   plotOutput("plasmidMap"),
   DTOutput("featuresTable")
 
 )
 
-# Define server logic required to draw a histogram ----
+
 server <- function(input, output) {
-  # cat in red bold letters
+
 
   cat(paste0("\033[1;31m", "Starting server", "\033[0m\n"))
 
@@ -101,7 +121,7 @@ server <- function(input, output) {
   selected_rows <- reactiveVal(integer(0))
   seq_length <- reactiveVal(NULL)
   render_trigger <- reactiveVal(0)
-  ori_shift <- reactiveVal(0)
+  ori_shift <- reactiveVal(TRUE)
   
   observeEvent(input$genbank, {
   gbk <- read_gb(file = input$genbank$datapath)
@@ -116,6 +136,9 @@ server <- function(input, output) {
   df <- as.data.frame(gbk)
   df <- remove_junk_features(df)
   df <- fix_geneious_type(df)
+  result <- standardize_ori_position(df, seq_length())
+  ori_shift(result$shift)
+  df <- result$df
   features_df(df)
 
   render_trigger(isolate(render_trigger()) + 1)  # only bump on new file
@@ -138,6 +161,7 @@ server <- function(input, output) {
 
   datatable(
     df,
+    class = "hover",
     selection = list(mode = "multiple",
                       selected = which(!(df$type %in% c("primer_bind")))),
     editable = list(target = "cell"),
@@ -148,7 +172,10 @@ server <- function(input, output) {
       dom = 'ft',
       server = TRUE
     )
-  )
+  ) |> formatStyle(
+  'type',
+  backgroundColor = styleEqual(levels = names(Geneious_palette), values = unname(Geneious_palette))
+)
 })
 
 proxy <- dataTableProxy("featuresTable")
@@ -181,6 +208,16 @@ observeEvent(input$featuresTable_cell_edit, {
   
   render_trigger(isolate(render_trigger()) + 1)
 })
+
+output$downloadMap <- downloadHandler(
+  filename = function() {
+    paste0(tools::file_path_sans_ext(input$genbank$name), "_plasmid_map.png")
+  },
+  content = function(file) {
+    req(features_df())
+    ggsave(file, plot = output$plasmidMap, device = "png", width = 10, height = 6)
+  }
+)
 
 }
 
