@@ -52,12 +52,17 @@ standardize_ori_position <- function(df, seq_length, ori_row = NULL) {
   list(df = shift_positions(df, seq_length, shift), shift = shift)
 }
 
-Geneious_palette = c("CDS" = "#FFFF00", 
+
+
+
+Geneious_palette = c(
+  "CDS" = "#FFFF00", 
   "gene" = "#00B200", 
   "misc_feature" = "#AAAAAA", 
   "Promoter" = "#BAFF00", 
   "promoter" = "#BAFF00",
-  "terminator" = "#FF5300", 
+  "terminator" = "#FF5300",
+  "Terminator" = "#FF5300",
   "rRNA" = "#FF0000", 
   "tRNA" = "#FF00A0", 
   "rep_origin" = "#50B3FF",
@@ -103,22 +108,20 @@ ui <- page_sidebar(
     checkboxInput("standardize_ori_position", "ORI at the start", value = TRUE),
     # TODO add input for font size and wrap threshold
     # TODO add input for color palette
-    downloadButton("downloadMap", "Download Map")
+    radioButtons("filetype_download", "Download Type", choices = c("png", "svg"), selected = "svg"),
+    downloadButton("downloadMap", "Download")
   ),
   plotOutput("plasmidMap"),
   DTOutput("featuresTable")
 
 )
 
-
 server <- function(input, output) {
-
 
   cat(paste0("\033[1;31m", "Starting server", "\033[0m\n"))
 
   genbank <- reactiveVal(NULL)
   features_df <- reactiveVal(NULL)  # now a reactiveVal, not reactive()
-  selected_rows <- reactiveVal(integer(0))
   seq_length <- reactiveVal(NULL)
   render_trigger <- reactiveVal(0)
   ori_shift <- reactiveVal(TRUE)
@@ -144,14 +147,18 @@ server <- function(input, output) {
   render_trigger(isolate(render_trigger()) + 1)  # only bump on new file
 })
   
-  output$plasmidMap <- renderPlot({
-    req(features_df())
+  plasmidMap <- reactive({
+      req(features_df())
 
     plot_plasmid(features_df()[input$featuresTable_rows_selected, ], name = input$genbank$name, seq_length = seq_length()) +  # now uses features_df()
       {if(input$circular) ggplot2::coord_polar() else ggplot2::coord_cartesian()} + 
       ggplot2::scale_y_continuous(limits = NULL) +
-      scale_fill_manual(values = Geneious_palette) + 
+      ggplot2::scale_fill_manual(values = Geneious_palette) + 
       theme()
+  })
+
+  output$plasmidMap <- renderPlot({
+    plasmidMap()
   })
   
   output$featuresTable <- renderDT({
@@ -211,11 +218,16 @@ observeEvent(input$featuresTable_cell_edit, {
 
 output$downloadMap <- downloadHandler(
   filename = function() {
-    paste0(tools::file_path_sans_ext(input$genbank$name), "_plasmid_map.png")
+    paste0(tools::file_path_sans_ext(input$genbank$name), ".", input$filetype_download)
   },
   content = function(file) {
-    req(features_df())
-    ggsave(file, plot = output$plasmidMap, device = "png", width = 10, height = 6)
+    if (input$filetype_download == "svg") {
+      svg(file, width = 12, height = 6)
+    } else {
+      png(file, width = 1200, height = 600)
+    }
+    print(plasmidMap())
+    dev.off()
   }
 )
 
