@@ -6,6 +6,7 @@ library(reactable)
 library(reactable.extras)
 library(DT)
 library(stringr)
+library(shinyjqui)
 
 ## donwalod from github if it is not installed
 if (!requireNamespace("plasmapR", quietly = TRUE)) {
@@ -71,7 +72,8 @@ Geneious_palette = c(
 	"3'UTR" = "#F5F5F5",
 	"intron" = "#F5F5F5", 
 	"regulatory" = "#0EA089",
-	"misc_recomb" = "#FF0000"), 
+	"misc_recomb" = "#FF0000", 
+	"mRNA" = "#BE3232"), 
 	Another_palette = c(
 	"CDS" = "#4C72B0",           # blue
 	"gene" = "#55A868",          # green
@@ -104,22 +106,6 @@ ui <- page_sidebar(
 	
 	title = "Plasmid Viewer",
 	theme = my_theme,
-	tags$head(
-	tags$style(HTML("
-		table.dataTable tbody tr.selected td,
-		table.dataTable tbody td.selected {
-			box-shadow: inset 0 0 0 9999px #7b8a8b40 !important;
-			border-left: 3px solid #89ab94 !important;
-			color: #000 !important;
-		}
-		:root {
-			--dt-row-selected: transparent !important;
-		}
-		table.dataTable tbody tr:hover, table.dataTable tbody tr:hover td {
-			background-color: rgba(255, 192, 203, 0.15) !important;
-		}
-	"))
-),
 	# Sidebar panel for inputs ----
 	sidebar = sidebar(
 		# Input: Slider for the number of bins ----
@@ -138,21 +124,67 @@ ui <- page_sidebar(
 		radioButtons("filetype_download", "Download Image", choices = c("png", "svg"), selected = "svg"),
 		downloadButton("downloadMap", "Download")
 	),
-	plotOutput("plasmidMap"),
+	div(
+		id = "plot_container", 
+		plotOutput("plasmidMap")
+		),
 	 navset_card_underline(
 		nav_panel("Features Table", 
 			h3("Features Table"),
 			"Select features from the table to display in the plasmid map. Double click to edit the text.",
-			DTOutput("featuresTable")),
+			reactableOutput("featuresTable")),
 			nav_panel("Colors", 
 				h3("Color Palette"),
 				selectInput("color_palette", "Select Color Palette", choices = names(color_palettes), selected = "Geneious_palette"),
 				reactableOutput("colorTable")
 				
-	)
+	),
+	height = "1200"
  
 
 ),
+  tags$head(
+    tags$style(HTML("
+      #plot_container {
+        resize: both;
+        overflow: hidden;
+        border: 1px solid #ccc;
+        width: 100%;
+        height: 400px;
+        min-width: 200px;
+        min-height: 150px;
+        padding: 0;
+      }
+      /* Let the browser stretch the existing image instantly while dragging */
+      #plot_container img {
+        width: 100% !important;
+        height: 100% !important;
+        object-fit: contain;
+      }
+    "))
+  ),  
+  tags$script(HTML("
+    $(function() {
+      var el = document.getElementById('plot_container');
+      var timeout = null;
+ 
+      var ro = new ResizeObserver(function(entries) {
+        for (var entry of entries) {
+          var w = entry.contentRect.width;
+          var h = entry.contentRect.height;
+ 
+          // Debounce: only notify Shiny after resizing pauses for 250ms
+          clearTimeout(timeout);
+          timeout = setTimeout(function() {
+            Shiny.setInputValue('plot_dims', {w: w, h: h}, {priority: 'event'});
+          }, 250);
+        }
+      });
+ 
+      ro.observe(el);
+    });
+  ")),
+
 reactable.extras::reactable_extras_dependency()
 )
 
@@ -166,6 +198,12 @@ server <- function(input, output) {
 	render_trigger <- reactiveVal(0)
 	ori_shift <- reactiveVal(TRUE)
 	colorPalettes <- reactiveVal(color_palettes)
+	features_table_selected <- reactive(getReactableState("featuresTable", "selected"))
+	feature_table_name_edit <- debounce(reactive(input$feature_table_name), millis = 500)
+	feature_table_type_edit <- debounce(reactive(input$feature_table_type), millis = 500)
+	dims <- reactive({
+    if (is.null(input$plot_dims)) list(w = 500, h = 400) else input$plot_dims
+  	})
 
 	observeEvent(input$genbank, {
 	gbk <- read_gb(file = input$genbank$datapath)
@@ -184,14 +222,14 @@ server <- function(input, output) {
 	ori_shift(result$shift)
 	df <- result$df
 	features_df(df)
-
 	render_trigger(isolate(render_trigger()) + 1)  # only bump on new file
+
 })
 	
 	plasmidMap <- reactive({
-			req(features_df())
+		req(features_df(), seq_length())
 
-		plot_plasmid(features_df()[input$featuresTable_rows_selected, ], 
+		plot_plasmid(features_df()[features_table_selected(), ], 
 		name = ifelse(input$custom_seq_name == "", input$genbank$name, input$custom_seq_name), 
 		seq_length = ifelse(input$custom_seq_length == "", seq_length(), as.numeric(input$custom_seq_length))) +  
 			{if(input$circular) ggplot2::coord_polar() else ggplot2::coord_cartesian()} + 
@@ -202,44 +240,69 @@ server <- function(input, output) {
 
 	output$plasmidMap <- renderPlot({
 		plasmidMap()
-	})
+	},
+	width  = function() dims()$w,
+	height = function() dims()$h
+)
 	
-	output$featuresTable <- renderDT({
-	render_trigger()                # <- the ONLY reactive dependency for a full rebuild
+	# TODO change to reactable for more features
+	output$featuresTable <- renderReactable({
+	render_trigger()
 	df <- isolate(features_df())    # read data without depending on it
 	req(df)
 
-	datatable(
-		df,
-		class = "hover",
-		selection = list(mode = "multiple",
-											selected = which(!str_detect(df$type, "primer_bind") & !str_detect(df$note, "sequence: "))),
-		editable = list(target = "cell"),
-		rownames = TRUE,
-		options = list(
-			columnDefs = list(list(visible = FALSE, targets = c(1))),
-			pageLength = 50,
-			dom = 'ft',
-			server = TRUE
-		)
-	) |> formatStyle(
-	'type',
-	backgroundColor = styleEqual(levels = names(colorPalettes()[[input$color_palette]]), values = unname(colorPalettes()[[input$color_palette]]))
-)
-})
+	reactable(
+		df, 
+		defaultPageSize = 100,
+		searchable = TRUE,
+		selection = "multiple",
+		defaultSelected = which(!str_detect(df$type, "primer_bind") & !str_detect(df$note, "sequence: ")),
+		columns = list(
+			index = colDef(show = FALSE), 
+			name = colDef(cell = reactable.extras::text_extra("feature_table_name", class = "table-text")),
+			type = colDef(cell = reactable.extras::text_extra("feature_table_type", class = "table-text")))
+	
+		)	
+	})
+
 
 proxy <- dataTableProxy("featuresTable")
 
-observeEvent(input$featuresTable_cell_edit, {
-	info <- input$featuresTable_cell_edit
+observeEvent(feature_table_name_edit(), {
+	edit <- feature_table_name_edit()
+	req(edit$row, edit$value)
+
+	# fix the row index to match the original data frame
+	info <- data.frame(
+		row = edit$row,
+		col = 2,
+		value = edit$value
+	)
 	df <- features_df()
 	df <- editData(df, info, rownames = TRUE)
+	# update the features_df reactiveVal with the new name
 	features_df(df)
 
-	replaceData(proxy, df, resetPaging = FALSE, 
-		rownames = TRUE,
-		clearSelection = "none")
-})
+
+}, ignoreNULL = TRUE)
+
+observeEvent(feature_table_type_edit(), {
+	edit <- feature_table_type_edit()
+	req(edit$row, edit$value)
+
+	# fix the row index to match the original data frame
+	info <- data.frame(
+		row = edit$row,
+		col = 3,
+		value = edit$value
+	)
+	df <- features_df()
+	df <- editData(df, info, rownames = TRUE)
+	# update the features_df reactiveVal with the new name
+	features_df(df)
+
+
+}, ignoreNULL = TRUE)
 
 	observeEvent(input$standardize_ori_position, {
 	req(features_df(), seq_length())
@@ -255,8 +318,7 @@ observeEvent(input$featuresTable_cell_edit, {
 		features_df(df_restored)
 		ori_shift(0)
 	}
-	
-	render_trigger(isolate(render_trigger()) + 1)
+
 })
 
 output$downloadMap <- downloadHandler(
@@ -273,6 +335,7 @@ output$downloadMap <- downloadHandler(
 		dev.off()
 	}
 )
+
 output$colorTable <- renderReactable({
 	data.frame(
 		Type = names(colorPalettes()[[input$color_palette]]),
@@ -295,8 +358,12 @@ observeEvent(input$customColorPalette, {
 	
 })
 
+observeEvent(features_table_selected(), {
+	# when the user selects or deselects rows, refresh the plasmid ma
+	print(features_df())
+	print(features_table_selected())
 
+})
 
 }
-
 shinyApp(ui = ui, server = server)
