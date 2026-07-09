@@ -130,8 +130,7 @@ ui <- page_sidebar(
 		),
 	 navset_card_underline(
 		nav_panel("Features Table", 
-			h3("Features Table"),
-			"Select features from the table to display in the plasmid map. Double click to edit the text.",
+			"Select features from the table to display in the plasmid map.",
 			reactableOutput("featuresTable")),
 			nav_panel("Colors", 
 				h3("Color Palette"),
@@ -199,8 +198,12 @@ server <- function(input, output) {
 	ori_shift <- reactiveVal(TRUE)
 	colorPalettes <- reactiveVal(color_palettes)
 	features_table_selected <- reactive(getReactableState("featuresTable", "selected"))
-	feature_table_name_edit <- debounce(reactive(input$feature_table_name), millis = 500)
-	feature_table_type_edit <- debounce(reactive(input$feature_table_type), millis = 500)
+	feature_table_name_edit <- debounce(reactive({
+		input[[paste0("feature_table_name_", render_trigger())]]
+	}), millis = 500)
+	feature_table_type_edit <- debounce(reactive({
+		input[[paste0("feature_table_type_", render_trigger())]]
+	}), millis = 500)
 	dims <- reactive({
     if (is.null(input$plot_dims)) list(w = 500, h = 400) else input$plot_dims
   	})
@@ -251,6 +254,9 @@ server <- function(input, output) {
 	df <- isolate(features_df())    # read data without depending on it
 	req(df)
 
+	name_input_id <- paste0("feature_table_name_", render_trigger())
+	type_input_id <- paste0("feature_table_type_", render_trigger())
+
 	reactable(
 		df, 
 		defaultPageSize = 100,
@@ -259,14 +265,12 @@ server <- function(input, output) {
 		defaultSelected = which(!str_detect(df$type, "primer_bind") & !str_detect(df$note, "sequence: ")),
 		columns = list(
 			index = colDef(show = FALSE), 
-			name = colDef(cell = reactable.extras::text_extra("feature_table_name", class = "table-text")),
-			type = colDef(cell = reactable.extras::text_extra("feature_table_type", class = "table-text")))
+			name = colDef(cell = reactable.extras::text_extra(name_input_id, class = "table-text")),
+			type = colDef(cell = reactable.extras::text_extra(type_input_id, class = "table-text")))
 	
-		)	
+		)
 	})
 
-
-proxy <- dataTableProxy("featuresTable")
 
 observeEvent(feature_table_name_edit(), {
 	edit <- feature_table_name_edit()
@@ -360,7 +364,6 @@ observeEvent(input$customColorPalette, {
 
 observeEvent(features_table_selected(), {
 	# when the user selects or deselects rows, refresh the plasmid ma
-	print(features_df())
 	print(features_table_selected())
 
 })
