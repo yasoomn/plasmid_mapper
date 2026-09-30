@@ -119,7 +119,8 @@ ui <- page_sidebar(
 		numericInput("custom_seq_length", "Custom Sequence Length", value = NA, min = 1),
 		#numericInput("base_size", "Base Font Size", value = 14, min = 1),
 		
-
+		# TODO add suport for truncated features
+		# TODO add option to show feature size in the lable, togglable by individual feature
 		# TODO add input for font size and wrap threshold
 		# TODO find a way of highlighting important features. Maybe by decreasing the opacity of unselected features. Or by adding a border to selected features.
 		radioButtons("filetype_download", "Download Image", choices = c("png", "svg"), selected = "svg"),
@@ -210,6 +211,9 @@ server <- function(input, output) {
 	feature_table_show_label_edit <- debounce(reactive({
 		input[[paste0("feature_table_show_label_", render_trigger())]]
 	}), millis = 200)
+	feature_table_show_size_edit <- debounce(reactive({
+		input[[paste0("feature_table_show_size_", render_trigger())]]
+	}), millis = 200)
 	feature_table_direction_edit <- debounce(reactive({
 		input[[paste0("feature_table_direction_", render_trigger())]]
 	}), millis = 200)
@@ -241,6 +245,8 @@ server <- function(input, output) {
 		df <- fix_geneious_type(df)
 		## Create new column to control whether to show the label for each feature. Default is to show all labels.
 		df$show_label <- 1
+		df$show_size <- 0
+		df$size <- df$end - df$start + 1
 
 		result <- standardize_ori_position(df, gbk$length)
 		list(gbk = gbk, df = result$df, shift = result$shift)
@@ -266,8 +272,9 @@ server <- function(input, output) {
 	plasmidMap <- reactive({
 		req(features_df(), seq_length())
 		print(head(features_df()))
-		df <- features_df()
+		df <- features_df() 
 		df$type <- tolower(df$type)
+		df$name <- ifelse(df$show_size == 1, paste0(df$name, " (", df$size, " bp)"), df$name)
 		plot_plasmid(df[features_table_selected(), ], 
 		name =  ifelse(input$custom_seq_name == "", input$genbank$name, input$custom_seq_name),
 		seq_length = ifelse(is.na(input$custom_seq_length), seq_length(), as.numeric(input$custom_seq_length))) +  
@@ -293,6 +300,7 @@ server <- function(input, output) {
 	name_input_id <- paste0("feature_table_name_", render_trigger())
 	type_input_id <- paste0("feature_table_type_", render_trigger())
 	show_label_input_id <- paste0("feature_table_show_label_", render_trigger())
+	show_size_input_id <- paste0("feature_table_show_size_", render_trigger())
 	direction_input_id <- paste0("feature_table_direction_", render_trigger())
 
 	reactable(
@@ -309,7 +317,14 @@ server <- function(input, output) {
 			name = colDef(cell = reactable.extras::text_extra(name_input_id, class = "table-text")),
 			type = colDef(cell = reactable.extras::text_extra(type_input_id, class = "table-text")), 
 			direction = colDef(cell = reactable.extras::dropdown_extra(direction_input_id, choices = c(1, 0, -1), class = "table-dropdown")),
-			show_label = colDef(cell = reactable.extras::checkbox_extra(show_label_input_id, class = "checkbox-extra"))
+			show_label = colDef(cell = reactable.extras::checkbox_extra(show_label_input_id, class = "checkbox-extra")),
+			size = colDef(cell = function(value) {
+				if (is.na(value)) return("")
+				format(value, big.mark = ",")
+			}),
+			show_size = colDef(cell = reactable.extras::checkbox_extra(show_size_input_id, class = "checkbox-extra")), 
+			start = colDef(show = FALSE), 
+			end = colDef(show = FALSE)
 			)
 	
 		)
@@ -363,6 +378,21 @@ observeEvent(feature_table_show_label_edit(), {
     row = edit$row,
     col = 8,
     value = edit$value
+  )
+  df <- features_df()
+  df <- editData(df, info, rownames = TRUE)
+  # update the features_df reactiveVal with the new name
+  features_df(df)
+}, ignoreNULL = TRUE)
+
+observeEvent(feature_table_show_size_edit(), {
+  edit <- feature_table_show_size_edit()
+  req(!is.null(edit$row), !is.null(edit$value))
+  # fix the row index to match the original data frame
+  info <- data.frame(
+	row = edit$row,
+	col = 9,
+	value = edit$value
   )
   df <- features_df()
   df <- editData(df, info, rownames = TRUE)
