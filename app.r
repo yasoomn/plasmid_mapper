@@ -59,6 +59,12 @@ standardize_ori_position <- function(df, seq_length, ori_row = NULL) {
 	list(df = shift_positions(df, seq_length, shift), shift = shift)
 }
 
+feature_types <- c(
+	"CDS", "Gene", "misc_feature", "Promoter", "Terminator", 
+	"rRNA", "tRNA", "rep_origin", "5'UTR", "3'UTR", 
+	"Intron", "Regulatory", "misc_recomb", "mRNA", "polya_signal", 
+	"primer_bind"
+)
 
 color_palettes <- list(
 Geneious_palette = c(
@@ -120,7 +126,7 @@ ui <- page_sidebar(
 		#numericInput("base_size", "Base Font Size", value = 14, min = 1),
 		
 		# TODO add suport for truncated features
-		# TODO add option to show feature size in the lable, togglable by individual feature
+
 		# TODO add input for font size and wrap threshold
 		# TODO find a way of highlighting important features. Maybe by decreasing the opacity of unselected features. Or by adding a border to selected features.
 		radioButtons("filetype_download", "Download Image", choices = c("png", "svg"), selected = "svg"),
@@ -199,6 +205,7 @@ server <- function(input, output) {
 	render_trigger <- reactiveVal(0)
 	ori_shift <- reactiveVal(TRUE)
 	colorPalettes <- reactiveVal(color_palettes)
+	ggplot_base_size <- reactive(11)
 
 	features_table_selected <- reactive(getReactableState("featuresTable", "selected"))
 	feature_table_name_edit <- debounce(reactive({
@@ -246,7 +253,7 @@ server <- function(input, output) {
 		## Create new column to control whether to show the label for each feature. Default is to show all labels.
 		df$show_label <- 1
 		df$show_size <- 0
-		df$size <- df$end - df$start + 1
+		df$size <- abs(df$end - df$start + 1)
 
 		result <- standardize_ori_position(df, gbk$length)
 		list(gbk = gbk, df = result$df, shift = result$shift)
@@ -303,6 +310,11 @@ server <- function(input, output) {
 	show_size_input_id <- paste0("feature_table_show_size_", render_trigger())
 	direction_input_id <- paste0("feature_table_direction_", render_trigger())
 
+
+	## function to compare the feature type with selection, compare in lower case to avoid case sensitivity issues
+
+
+
 	reactable(
 		df, 
 		defaultPageSize = 100,
@@ -315,7 +327,7 @@ server <- function(input, output) {
 		columns = list(
 			index = colDef(show = FALSE), 
 			name = colDef(cell = reactable.extras::text_extra(name_input_id, class = "table-text")),
-			type = colDef(cell = reactable.extras::text_extra(type_input_id, class = "table-text")), 
+			type = colDef(cell = reactable.extras::dropdown_extra(type_input_id, choices = tolower(feature_types), class = "table-dropdown")),
 			direction = colDef(cell = reactable.extras::dropdown_extra(direction_input_id, choices = c(1, 0, -1), class = "table-dropdown")),
 			show_label = colDef(cell = reactable.extras::checkbox_extra(show_label_input_id, class = "checkbox-extra")),
 			size = colDef(cell = function(value) {
