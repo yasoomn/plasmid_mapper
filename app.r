@@ -123,7 +123,7 @@ ui <- page_sidebar(
 		checkboxInput("standardize_ori_position", "ORI at the start", value = TRUE),
 		textInput("custom_seq_name", "Custom Sequence Name", value = ""),
 		numericInput("custom_seq_length", "Custom Sequence Length", value = NA, min = 1),
-		#numericInput("base_size", "Base Font Size", value = 14, min = 1),
+		numericInput("label_font_size", "Label Font Size", value = 12, min = 1),
 		
 		# TODO add suport for truncated features
 
@@ -284,10 +284,14 @@ server <- function(input, output) {
 		df$name <- ifelse(df$show_size == 1, paste0(df$name, " (", df$size, " bp)"), df$name)
 		plot_plasmid(df[features_table_selected(), ], 
 		name =  ifelse(input$custom_seq_name == "", input$genbank$name, input$custom_seq_name),
-		seq_length = ifelse(is.na(input$custom_seq_length), seq_length(), as.numeric(input$custom_seq_length))) +  
+		seq_length = ifelse(is.na(input$custom_seq_length), seq_length(), as.numeric(input$custom_seq_length)), 
+		label_size = input$label_font_size/3, 
+		label_wrap = 20, 
+		fit_text_size = input$label_font_size) +  
 			{if(input$circular) ggplot2::coord_polar() else ggplot2::coord_cartesian()} + 
 			ggplot2::scale_y_continuous() +
 			ggplot2::scale_fill_manual(values = colorPalettes()[[input$color_palette]])
+
 			
 	})
 
