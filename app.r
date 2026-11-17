@@ -7,17 +7,23 @@ library(reactable.extras)
 library(DT)
 library(stringr)
 library(shinyjqui)
+library(inshiny)
 
-## donwalod from github if it is not installed
-if (!requireNamespace("plasmapR", quietly = TRUE)) {
-	# Using my fork of plasmapR
+## Install the GitHub fork when it is missing or lacks custom start support.
+if (
+	!requireNamespace("plasmapR", quietly = TRUE) ||
+	!"start_bp" %in% names(formals(getExportedValue("plasmapR", "plot_plasmid")))
+) {
+	if ("plasmapR" %in% loadedNamespaces()) {
+		unloadNamespace("plasmapR")
+	}
 	remotes::install_github("yasoomn/plasmapR")
 }
 library(plasmapR)
 
 remove_junk_features <- function(df) {
 	
-	junk_features.name <- c("Geneious type: ligation", "Geneious type: Fragment")
+	junk_features.name <- c("Geneious type: ligation", "Geneious type: Fragment", "Geneious type: Editing History Replacement")
 	junk_features.type <- c("source", "Fragment", "ligation")
 	
 	df <- df |> filter(!note %in% junk_features.name, !type %in% junk_features.type)
@@ -60,7 +66,7 @@ standardize_ori_position <- function(df, seq_length, ori_row = NULL) {
 }
 
 feature_types <- c(
-	"CDS", "Gene", "misc_feature", "Promoter", "Terminator", 
+	"cds", "Gene", "misc_feature", "Promoter", "Terminator", 
 	"rRNA", "tRNA", "rep_origin", "5'UTR", "3'UTR", 
 	"Intron", "Regulatory", "misc_recomb", "mRNA", "polya_signal", 
 	"primer_bind"
@@ -122,7 +128,14 @@ ui <- page_sidebar(
 		checkboxInput("circular", "Circular view", value = FALSE), 
 		checkboxInput("standardize_ori_position", "ORI at the start", value = TRUE),
 		textInput("custom_seq_name", "Custom Sequence Name", value = ""),
-		numericInput("custom_seq_length", "Custom Sequence Length", value = NA, min = 1),
+		p("Custom start and end positions"), 
+		div(
+			style = "display: flex; align-items: center; gap: 0.5rem;",
+			numericInput("custom_seq_start", value = NA, min = 0, label = NULL, width = "140px"),
+			span("to"),
+			numericInput("custom_seq_length", value = NA, min = 0, label = NULL, width = "140px")
+		),
+		
 		numericInput("label_font_size", "Label Font Size", value = 12, min = 1),
 		
 		# TODO add suport for truncated features
@@ -202,6 +215,7 @@ server <- function(input, output) {
 	genbank <- reactiveVal(NULL)
 	features_df <- reactiveVal(NULL) 
 	seq_length <- reactiveVal(NULL)
+	start_bp <- reactiveVal(NULL)
 	render_trigger <- reactiveVal(0)
 	ori_shift <- reactiveVal(TRUE)
 	colorPalettes <- reactiveVal(color_palettes)
@@ -285,6 +299,7 @@ server <- function(input, output) {
 		plot_plasmid(df[features_table_selected(), ], 
 		name =  ifelse(input$custom_seq_name == "", input$genbank$name, input$custom_seq_name),
 		seq_length = ifelse(is.na(input$custom_seq_length), seq_length(), as.numeric(input$custom_seq_length)), 
+		start_bp = ifelse(is.na(input$custom_seq_start), 0, as.numeric(input$custom_seq_start)), 
 		label_size = input$label_font_size/3, 
 		label_wrap = 20, 
 		fit_text_size = input$label_font_size) +  
