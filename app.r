@@ -6,8 +6,9 @@ library(reactable)
 library(reactable.extras)
 library(DT)
 library(stringr)
-library(shinyjqui)
-library(inshiny)
+
+
+#rsconnect::deployApp()
 
 ## Install the GitHub fork when it is missing or lacks custom start support.
 if (
@@ -35,11 +36,11 @@ fix_geneious_type <- function(df) {
 	print(df$name)
 	if ("note" %in% colnames(df)) {
 		df$name[is.na(df$name)] <- " "
-		df$type[df$note == "Geneious type: promoter"] <- "Promoter"
+		df$type[df$note == "Geneious type: promoter"] <- "promoter"
 		df$type[df$note == "Geneious type: terminator"] <- "terminator"
 		df$type[df$note == "Geneious type: origin of replication"] <- "rep_origin"
-		df$type[df$note == "Geneious type: 5'_UTR"] <- "5'UTR"
-		df$type[df$note == "Geneious type: 3'_UTR"] <- "3'UTR"
+		df$type[df$note == "Geneious type: 5'_UTR"] <- "5'utr"
+		df$type[df$note == "Geneious type: 3'_UTR"] <- "3'utr"
 	}
 	
 	return(df)
@@ -129,12 +130,13 @@ ui <- page_sidebar(
 		checkboxInput("standardize_ori_position", "ORI at the start", value = TRUE),
 		textInput("custom_seq_name", "Custom Sequence Name", value = ""),
 		p("Custom start and end positions"), 
-		div(
+			div(
 			style = "display: flex; align-items: center; gap: 0.5rem;",
 			numericInput("custom_seq_start", value = NA, min = 0, label = NULL, width = "140px"),
 			span("to"),
 			numericInput("custom_seq_length", value = NA, min = 0, label = NULL, width = "140px")
 		),
+		
 		
 		numericInput("label_font_size", "Label Font Size", value = 12, min = 1),
 		
@@ -301,7 +303,7 @@ server <- function(input, output) {
 		seq_length = ifelse(is.na(input$custom_seq_length), seq_length(), as.numeric(input$custom_seq_length)), 
 		start_bp = ifelse(is.na(input$custom_seq_start), 0, as.numeric(input$custom_seq_start)), 
 		label_size = input$label_font_size/3, 
-		label_wrap = 20, 
+		label_wrap = 80, 
 		fit_text_size = input$label_font_size) +  
 			{if(input$circular) ggplot2::coord_polar() else ggplot2::coord_cartesian()} + 
 			ggplot2::scale_y_continuous() +
